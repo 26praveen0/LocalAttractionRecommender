@@ -1,0 +1,121 @@
+import requests
+import tkinter as tk
+from tkinter import ttk, messagebox
+
+# ========== Configuration ==========
+API_KEY = "927a390eafmshe5be0af23460741p11d1a5jsnf7be1715600a"
+BASE_URL = "https://api.opentripmap.com/0.1/en/places"
+
+# ========== API Helper Functions ==========
+
+def get_coordinates(city):
+    url = f"{BASE_URL}/geoname"
+    params = {"name": city, "apikey": API_KEY}
+    try:
+        response = requests.get(url, params=params)
+        print(f"[DEBUG] Geoname Request: {response.url}")
+        response.raise_for_status()
+        data = response.json()
+        print(f"[DEBUG] Geoname Response: {data}")
+        return data.get("lat"), data.get("lon")
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] Failed to fetch coordinates: {e}")
+        return None, None
+
+def get_places(lat, lon, kind="interesting_places", limit=5):
+    url = f"{BASE_URL}/radius"
+    params = {
+        "apikey": API_KEY,
+        "radius": 5000,
+        "lon": lon,
+        "lat": lat,
+        "kinds": kind,
+        "format": "json",
+        "limit": limit
+    }
+    try:
+        response = requests.get(url, params=params)
+        print(f"[DEBUG] Radius Request: {response.url}")
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] Failed to fetch places: {e}")
+        return []
+
+def map_interest_to_kind(interest):
+    mapping = {
+        "museums": "museums",
+        "parks": "natural,urban_environment",
+        "historic": "architecture,historic",
+        "food": "foods"
+    }
+    return mapping.get(interest.lower(), "interesting_places")
+
+# ========== GUI Functions ==========
+
+def search_places():
+    city = city_entry.get().strip()
+    interest = interest_entry.get().strip()
+
+    if not city:
+        messagebox.showwarning("Missing Input", "Please enter a city name.")
+        return
+
+    result_text.delete("1.0", tk.END)
+    result_text.insert(tk.END, f"🔍 Searching for {interest or 'places'} in {city}...\n\n")
+
+    lat, lon = get_coordinates(city)
+    if not lat or not lon:
+        result_text.insert(tk.END, "❌ Couldn't find the city. Try again with a more known location.\n")
+        return
+
+    kind = map_interest_to_kind(interest)
+    places = get_places(lat, lon, kind)
+
+    if not places:
+        result_text.insert(tk.END, "😕 No places found for the given interest.\n")
+        return
+
+    result_text.insert(tk.END, "✨ Here are some places you might like:\n\n")
+    for place in places:
+        name = place.get("name", "Unknown Place")
+        xid = place.get("xid")
+        kinds = place.get("kinds", "N/A")
+        result_text.insert(tk.END, f"🏞️ {name}\n")
+        result_text.insert(tk.END, f"   ➤ Category: {kinds}\n")
+        result_text.insert(tk.END, f"   ➤ More Info: https://opentripmap.com/en/poi/{xid}\n\n")
+
+# ========== GUI Setup ==========
+
+root = tk.Tk()
+root.title("Local Attractions Recommender")
+root.geometry("600x500")
+
+title_label = tk.Label(root, text="🏞️ Local Attractions Recommender", font=("Helvetica", 16, "bold"))
+title_label.pack(pady=10)
+
+input_frame = tk.Frame(root)
+input_frame.pack(pady=10)
+
+tk.Label(input_frame, text="📍 City:").grid(row=0, column=0, padx=5, pady=5)
+city_entry = tk.Entry(input_frame, width=30)
+city_entry.grid(row=0, column=1, padx=5, pady=5)
+
+tk.Label(input_frame, text="🎯 Interest:").grid(row=1, column=0, padx=5, pady=5)
+interest_entry = tk.Entry(input_frame, width=30)
+interest_entry.grid(row=1, column=1, padx=5, pady=5)
+
+search_btn = tk.Button(root, text="Search", command=search_places, bg="#4CAF50", fg="white", padx=10, pady=5)
+search_btn.pack(pady=10)
+
+result_frame = tk.Frame(root)
+result_frame.pack(pady=10, fill="both", expand=True)
+
+result_text = tk.Text(result_frame, wrap="word", font=("Courier", 10))
+result_text.pack(side="left", fill="both", expand=True)
+
+scrollbar = ttk.Scrollbar(result_frame, command=result_text.yview)
+scrollbar.pack(side="right", fill="y")
+result_text.configure(yscrollcommand=scrollbar.set)
+
+root.mainloop()
